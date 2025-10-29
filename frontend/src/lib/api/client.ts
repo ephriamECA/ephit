@@ -28,8 +28,9 @@ apiClient.interceptors.request.use(async (config) => {
     if (authStorage) {
       try {
         const { state } = JSON.parse(authStorage)
-        if (state?.token) {
-          config.headers.Authorization = `Bearer ${state.token}`
+        const token = state?.accessToken ?? state?.token
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`
         }
       } catch (error) {
         console.error('Error parsing auth storage:', error)
@@ -56,6 +57,7 @@ apiClient.interceptors.response.use(
       // Clear auth and redirect to login
       if (typeof window !== 'undefined') {
         localStorage.removeItem('auth-storage')
+        document.cookie = 'auth-token=; path=/; max-age=0; sameSite=Lax'
         window.location.href = '/login'
       }
     }

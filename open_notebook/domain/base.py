@@ -3,6 +3,7 @@ from typing import Any, ClassVar, Dict, List, Optional, Type, TypeVar, Union, ca
 
 from loguru import logger
 from pydantic import BaseModel, ValidationError, field_validator, model_validator
+from surrealdb import RecordID
 
 from open_notebook.database.repository import (
     ensure_record_id,
@@ -27,6 +28,7 @@ class ObjectModel(BaseModel):
     table_name: ClassVar[str] = ""
     created: Optional[datetime] = None
     updated: Optional[datetime] = None
+    owner: Optional[str] = None
 
     @classmethod
     async def get_all(cls: Type[T], order_by=None) -> List[T]:
@@ -164,7 +166,15 @@ class ObjectModel(BaseModel):
 
     def _prepare_save_data(self) -> Dict[str, Any]:
         data = self.model_dump()
-        return {key: value for key, value in data.items() if value is not None}
+        prepared: Dict[str, Any] = {}
+        for key, value in data.items():
+            if value is None:
+                continue
+            if key == "owner" and isinstance(value, str):
+                prepared[key] = ensure_record_id(value)
+                continue
+            prepared[key] = value
+        return prepared
 
     async def delete(self) -> bool:
         if self.id is None:
@@ -200,6 +210,19 @@ class ObjectModel(BaseModel):
         if isinstance(value, str):
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
         return value
+
+    @field_validator("owner", mode="before")
+    @classmethod
+    def parse_owner(cls, value):
+        if value is None:
+            return None
+        if isinstance(value, RecordID):
+            return str(value)
+        return str(value)
+
+    def assign_owner(self, owner_id: Optional[str]) -> None:
+        if owner_id:
+            self.owner = owner_id
 
 
 class RecordModel(BaseModel):

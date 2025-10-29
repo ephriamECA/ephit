@@ -1,0 +1,14 @@
+REMOVE INDEX episode_profile_owner_index ON TABLE episode_profile;
+REMOVE INDEX chat_session_owner_index ON TABLE chat_session;
+REMOVE INDEX source_owner_index ON TABLE source;
+REMOVE INDEX note_owner_index ON TABLE note;
+REMOVE INDEX notebook_owner_index ON TABLE notebook;
+
+REMOVE FIELD owner ON TABLE episode_profile;
+REMOVE FIELD owner ON TABLE chat_session;
+REMOVE FIELD owner ON TABLE source;
+REMOVE FIELD owner ON TABLE note;
+REMOVE FIELD owner ON TABLE notebook;
+
+REMOVE INDEX user_email_unique ON TABLE user;
+REMOVE TABLE user;

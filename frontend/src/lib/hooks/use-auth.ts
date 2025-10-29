@@ -1,47 +1,36 @@
 'use client'
 
-import { useAuthStore } from '@/lib/stores/auth-store'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
+import { useAuthStore } from '@/lib/stores/auth-store'
 
 export function useAuth() {
   const router = useRouter()
   const {
+    user,
+    accessToken,
     isAuthenticated,
     isLoading,
-    login,
-    logout,
-    checkAuth,
-    checkAuthRequired,
     error,
     hasHydrated,
-    authRequired
+    login,
+    register,
+    logout,
+    refreshSession,
   } = useAuthStore()
 
   useEffect(() => {
-    // Only check auth after the store has hydrated from localStorage
-    if (hasHydrated) {
-      // First check if auth is required
-      if (authRequired === null) {
-        checkAuthRequired().then((required) => {
-          // If auth is required, check if we have valid credentials
-          if (required) {
-            checkAuth()
-          }
-        })
-      } else if (authRequired) {
-        // Auth is required, check credentials
-        checkAuth()
-      }
-      // If authRequired === false, we're already authenticated (set in checkAuthRequired)
+    if (!hasHydrated) {
+      return
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasHydrated, authRequired])
+    if (accessToken && !user) {
+      void refreshSession()
+    }
+  }, [accessToken, user, refreshSession, hasHydrated])
 
-  const handleLogin = async (password: string) => {
-    const success = await login(password)
+  const handleLogin = async (email: string, password: string) => {
+    const success = await login(email, password)
     if (success) {
-      // Check if there's a stored redirect path
       const redirectPath = sessionStorage.getItem('redirectAfterLogin')
       if (redirectPath) {
         sessionStorage.removeItem('redirectAfterLogin')
@@ -53,16 +42,27 @@ export function useAuth() {
     return success
   }
 
+  const handleRegister = async (email: string, password: string, displayName?: string) => {
+    const success = await register(email, password, displayName)
+    if (success) {
+      router.push('/notebooks')
+    }
+    return success
+  }
+
   const handleLogout = () => {
     logout()
     router.push('/login')
   }
 
   return {
+    user,
+    accessToken,
     isAuthenticated,
-    isLoading: isLoading || !hasHydrated, // Treat lack of hydration as loading
+    isLoading: isLoading || !hasHydrated,
     error,
     login: handleLogin,
-    logout: handleLogout
+    register: handleRegister,
+    logout: handleLogout,
   }
 }

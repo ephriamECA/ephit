@@ -7,8 +7,24 @@ services:
     plan: starter
     healthCheckPath: /
     envVars:
+      # Required: AI Provider (at least one)
       - key: OPENAI_API_KEY
         sync: false
+      
+      # Optional: AWS S3 for podcast audio storage
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_ENDPOINT_URL
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: S3_REGION
+        value: "us-east-2"
+        sync: false
+      
+      # Database Configuration
       - key: SURREAL_URL
         value: "ws://localhost:8000/rpc"
       - key: SURREAL_USER
@@ -19,3 +35,7 @@ services:
         value: "open_notebook"
       - key: SURREAL_DATABASE
         value: "production"
+      
+      # Frontend Configuration
+      - key: PORT
+        value: "8502"

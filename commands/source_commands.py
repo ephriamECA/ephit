@@ -2,7 +2,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from surreal_commands import CommandInput, CommandOutput, command
 
 from open_notebook.database.repository import ensure_record_id
@@ -30,9 +30,10 @@ def full_model_dump(model):
 class SourceProcessingInput(CommandInput):
     source_id: str
     content_state: Dict[str, Any]
-    notebook_ids: List[str]
-    transformations: List[str]
-    embed: bool
+    notebook_ids: List[str] = Field(default_factory=list)
+    transformations: List[str] = Field(default_factory=list)
+    embed: bool = False
+    user_id: Optional[str] = None
 
 
 class SourceProcessingOutput(CommandOutput):
@@ -89,15 +90,18 @@ async def process_source_command(
         logger.info(f"Processing source with {len(input_data.notebook_ids)} notebooks")
 
         # Execute source_graph with all notebooks
-        result = await source_graph.ainvoke(
-            {  # type: ignore[arg-type]
-                "content_state": input_data.content_state,
-                "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
-                "apply_transformations": transformations,
-                "embed": input_data.embed,
-                "source_id": input_data.source_id,  # Add the source_id to the state
-            }
-        )
+        from open_notebook.utils.provider_env import user_provider_context
+
+        async with user_provider_context(input_data.user_id):
+            result = await source_graph.ainvoke(
+                {  # type: ignore[arg-type]
+                    "content_state": input_data.content_state,
+                    "notebook_ids": input_data.notebook_ids,  # Use notebook_ids (plural) as expected by SourceState
+                    "apply_transformations": transformations,
+                    "embed": input_data.embed,
+                    "source_id": input_data.source_id,  # Add the source_id to the state
+                }
+            )
 
         processed_source = result["source"]
 

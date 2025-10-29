@@ -99,6 +99,19 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
     [episodeProfilesQuery.episodeProfiles]
   )
 
+  // Debug: Log episode profiles for troubleshooting
+  useEffect(() => {
+    if (open) {
+      console.log('Episode Profiles Debug:', {
+        isLoading: episodeProfilesQuery.isLoading,
+        isError: episodeProfilesQuery.isError,
+        error: episodeProfilesQuery.error,
+        profiles: episodeProfiles,
+        count: episodeProfiles.length
+      })
+    }
+  }, [open, episodeProfilesQuery.isLoading, episodeProfilesQuery.isError, episodeProfilesQuery.error, episodeProfiles])
+
   // Fetch sources and notes for notebooks using useQueries
   const sourcesQueries = useQueries({
     queries: notebooks.map((notebook) => ({
@@ -502,7 +515,8 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
         resetState()
       }
     }}>
-      <DialogContent className="w-[80vw] max-w-[1080px] max-h-[90vh] overflow-hidden">
+      <DialogContent className="!w-[92vw] !max-w-[1600px] !h-[92vh] !max-h-[92vh] !p-8">
+        <div className="flex flex-col h-full max-h-[calc(92vh-8rem)] gap-6 overflow-hidden">
         <DialogHeader>
           <DialogTitle>Generate Podcast Episode</DialogTitle>
           <DialogDescription>
@@ -510,7 +524,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr]">
+        <div className="grid flex-1 gap-6 overflow-hidden md:grid-cols-[2fr_1fr] xl:grid-cols-[3fr_1fr]">
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between">
               <div>
@@ -539,7 +553,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
               </div>
             </div>
 
-            <div className="rounded-lg border bg-muted/30">
+            <div className="rounded-lg border bg-muted/30 overflow-hidden flex-1 min-h-0 flex flex-col">
               {notebooksQuery.isLoading ? (
                 <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading notebooks
@@ -549,7 +563,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                   No notebooks found. Create a notebook and add content before generating a podcast.
                 </div>
               ) : (
-                <ScrollArea className="h-[60vh]">
+                <ScrollArea className="h-full">
                   <Accordion
                     type="multiple"
                     value={expandedNotebooks}
@@ -747,6 +761,10 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading episode profiles
                 </div>
+              ) : episodeProfilesQuery.isError ? (
+                <div className="rounded-lg border border-dashed border-destructive bg-destructive/10 p-4 text-sm text-destructive">
+                  Failed to load episode profiles. Error: {episodeProfilesQuery.error?.toString()}
+                </div>
               ) : episodeProfiles.length === 0 ? (
                 <div className="rounded-lg border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
                   No episode profiles found. Create an episode profile before generating a podcast.
@@ -763,7 +781,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
                       <SelectTrigger id="episode_profile">
                         <SelectValue placeholder="Select an episode profile" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="z-[100]">
                         {episodeProfiles.map((profile) => (
                           <SelectItem key={profile.id} value={profile.id}>
                             {profile.name}
@@ -825,6 +843,7 @@ export function GeneratePodcastDialog({ open, onOpenChange }: GeneratePodcastDia
               </p>
             </div>
           </div>
+        </div>
         </div>
       </DialogContent>
     </Dialog>

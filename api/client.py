@@ -33,11 +33,11 @@ class APIClient:
             logger.error(f"Invalid API_CLIENT_TIMEOUT value '{timeout_str}', using default 300s")
             self.timeout = 300.0
 
-        # Add authentication header if password is set
+        # Add authentication header if service token is set
         self.headers = {}
-        password = os.getenv("OPEN_NOTEBOOK_PASSWORD")
-        if password:
-            self.headers["Authorization"] = f"Bearer {password}"
+        token = os.getenv("API_ACCESS_TOKEN") or os.getenv("OPEN_NOTEBOOK_PASSWORD")
+        if token:
+            self.headers["Authorization"] = f"Bearer {token}"
 
     def _make_request(
         self, method: str, endpoint: str, timeout: Optional[float] = None, **kwargs

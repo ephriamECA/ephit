@@ -41,6 +41,7 @@ class PodcastService:
         notebook_id: Optional[str] = None,
         content: Optional[str] = None,
         briefing_suffix: Optional[str] = None,
+        user_id: Optional[str] = None,
     ) -> str:
         """Submit a podcast generation job for background processing"""
         try:
@@ -82,6 +83,7 @@ class PodcastService:
                 "episode_name": episode_name,
                 "content": str(content),
                 "briefing_suffix": briefing_suffix,
+                "user_id": user_id,
             }
 
             # Ensure command modules are imported before submitting
@@ -147,6 +149,28 @@ class PodcastService:
             logger.error(f"Failed to list podcast episodes: {e}")
             raise HTTPException(
                 status_code=500, detail=f"Failed to list episodes: {str(e)}"
+            )
+    
+    @staticmethod
+    async def list_episodes_for_user(user_id: str) -> list[PodcastEpisode]:
+        """List podcast episodes for a specific user"""
+        try:
+            from open_notebook.database.repository import ensure_record_id, repo_query
+            
+            user_record_id = ensure_record_id(user_id)
+            
+            # Query for episodes owned by this user
+            results = await repo_query(
+                "SELECT * FROM episode WHERE owner = $owner ORDER BY created DESC",
+                {"owner": user_record_id}
+            )
+            
+            episodes = [PodcastEpisode(**ep) for ep in results]
+            return episodes
+        except Exception as e:
+            logger.error(f"Error listing podcast episodes for user {user_id}: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Failed to list episodes for user: {str(e)}"
             )
 
     @staticmethod

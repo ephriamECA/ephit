@@ -2,12 +2,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { notebooksApi } from '@/lib/api/notebooks'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { CreateNotebookRequest, UpdateNotebookRequest } from '@/lib/types/api'
 
 export function useNotebooks(archived?: boolean) {
+  const userId = useAuthStore((state) => state.user?.id)
+
   return useQuery({
-    queryKey: [...QUERY_KEYS.notebooks, { archived }],
+    queryKey: [...QUERY_KEYS.notebooks, { archived, userId }],
     queryFn: () => notebooksApi.list({ archived, order_by: 'updated desc' }),
+    enabled: !!userId,
   })
 }
 

@@ -169,3 +169,9 @@ gap-2 sm:gap-3          // More space on larger screens
 
 **Result**: A beautiful, responsive, Apple-inspired interface branded as **EphItUp** with Liquid Glass design that works perfectly on all devices!
 
+
+
+
+
+
+

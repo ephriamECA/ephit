@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import List, Optional
 from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse, RedirectResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -11,6 +11,13 @@ from api.podcast_service import (
     PodcastGenerationRequest,
     PodcastGenerationResponse,
     PodcastService,
+)
+from api.security import get_current_active_user
+from open_notebook.domain.user import User
+from open_notebook.storage import (
+    delete_object,
+    generate_presigned_url,
+    parse_s3_url,
 )
 
 router = APIRouter()
@@ -31,14 +38,24 @@ class PodcastEpisodeResponse(BaseModel):
 
 
 def _resolve_audio_path(audio_file: str) -> Path:
+    """Resolve audio file path - handles both absolute and relative paths."""
     if audio_file.startswith("file://"):
         parsed = urlparse(audio_file)
         return Path(unquote(parsed.path))
-    return Path(audio_file)
+    # Resolve the path to absolute
+    audio_path = Path(audio_file)
+    # If it's already absolute, return it as-is
+    if audio_path.is_absolute():
+        return audio_path
+    # Otherwise, resolve relative to project root
+    return audio_path.resolve()
 
 
 @router.post("/podcasts/generate", response_model=PodcastGenerationResponse)
-async def generate_podcast(request: PodcastGenerationRequest):
+async def generate_podcast(
+    request: PodcastGenerationRequest,
+    current_user: User = Depends(get_current_active_user),
+):
     """
     Generate a podcast episode using Episode Profiles.
     Returns immediately with job ID for status tracking.
@@ -51,6 +68,7 @@ async def generate_podcast(request: PodcastGenerationRequest):
             notebook_id=request.notebook_id,
             content=request.content,
             briefing_suffix=request.briefing_suffix,
+            user_id=str(current_user.id),
         )
 
         return PodcastGenerationResponse(
@@ -83,10 +101,12 @@ async def get_podcast_job_status(job_id: str):
 
 
 @router.get("/podcasts/episodes", response_model=List[PodcastEpisodeResponse])
-async def list_podcast_episodes():
-    """List all podcast episodes"""
+async def list_podcast_episodes(
+    current_user: User = Depends(get_current_active_user),
+):
+    """List all podcast episodes for the current user"""
     try:
-        episodes = await PodcastService.list_episodes()
+        episodes = await PodcastService.list_episodes_for_user(current_user.id)
 
         response_episodes = []
         for episode in episodes:
@@ -107,9 +127,9 @@ async def list_podcast_episodes():
 
             audio_url = None
             if episode.audio_file:
-                audio_path = _resolve_audio_path(episode.audio_file)
-                if audio_path.exists():
-                    audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
+                # Always use the backend API endpoint for audio (works for both S3 and local)
+                audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
+                logger.info(f"Setting audio_url for episode '{episode.name}': {audio_url}")
 
             response_episodes.append(
                 PodcastEpisodeResponse(
@@ -137,10 +157,17 @@ async def list_podcast_episodes():
 
 
 @router.get("/podcasts/episodes/{episode_id}", response_model=PodcastEpisodeResponse)
-async def get_podcast_episode(episode_id: str):
-    """Get a specific podcast episode"""
+async def get_podcast_episode(
+    episode_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get a specific podcast episode (owned by current user)"""
     try:
         episode = await PodcastService.get_episode(episode_id)
+        
+        # Check that the episode belongs to the current user
+        if episode.owner and str(episode.owner) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Episode not found")
 
         # Get job status if available
         job_status = None
@@ -155,9 +182,8 @@ async def get_podcast_episode(episode_id: str):
 
         audio_url = None
         if episode.audio_file:
-            audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path.exists():
-                audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
+            # Always use the backend API endpoint for audio
+            audio_url = f"/api/podcasts/episodes/{episode.id}/audio"
 
         return PodcastEpisodeResponse(
             id=str(episode.id),
@@ -192,6 +218,62 @@ async def stream_podcast_episode_audio(episode_id: str):
     if not episode.audio_file:
         raise HTTPException(status_code=404, detail="Episode has no audio file")
 
+    if episode.audio_file.startswith("s3://"):
+        _, key = parse_s3_url(episode.audio_file)
+        if not key:
+            raise HTTPException(status_code=404, detail="Invalid audio file reference")
+        
+        # Download from S3 and serve
+        try:
+            from open_notebook.storage.s3 import is_s3_configured
+            import boto3
+            import tempfile
+            import os
+            
+            if not is_s3_configured():
+                raise HTTPException(status_code=500, detail="S3 not configured")
+            
+            # Get S3 client directly
+            bucket = os.getenv("S3_BUCKET_NAME")
+            aws_access_key = os.getenv("AWS_ACCESS_KEY_ID")
+            aws_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY")
+            
+            client = boto3.client(
+                's3',
+                aws_access_key_id=aws_access_key,
+                aws_secret_access_key=aws_secret_key,
+                region_name=os.getenv('S3_REGION', 'us-east-2')
+            )
+            
+            # Create a temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
+                temp_path = tmp_file.name
+            
+            try:
+                # Download file from S3
+                logger.info(f"Downloading from S3: bucket={bucket}, key={key}")
+                client.download_file(bucket, key, temp_path)
+                
+                logger.info(f"Downloaded S3 audio to {temp_path}, returning to client")
+                
+                # Return as FileResponse
+                return FileResponse(
+                    temp_path,
+                    media_type="audio/mpeg",
+                    filename=episode.name + ".mp3",
+                    background=None  # Don't delete immediately
+                )
+            except Exception as e:
+                # Clean up on error
+                logger.error(f"Failed to download from S3: {e}")
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                raise e
+                
+        except Exception as e:
+            logger.error(f"Failed to stream S3 audio: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to retrieve audio from S3: {str(e)}")
+
     audio_path = _resolve_audio_path(episode.audio_file)
     if not audio_path.exists():
         raise HTTPException(status_code=404, detail="Audio file not found on disk")
@@ -210,15 +292,21 @@ async def delete_podcast_episode(episode_id: str):
         # Get the episode first to check if it exists and get the audio file path
         episode = await PodcastService.get_episode(episode_id)
         
-        # Delete the physical audio file if it exists
+        # Delete the stored audio asset if it exists
         if episode.audio_file:
-            audio_path = _resolve_audio_path(episode.audio_file)
-            if audio_path.exists():
-                try:
-                    audio_path.unlink()
-                    logger.info(f"Deleted audio file: {audio_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete audio file {audio_path}: {e}")
+            if episode.audio_file.startswith("s3://"):
+                _, key = parse_s3_url(episode.audio_file)
+                if key:
+                    delete_object(key)
+                    logger.info(f"Deleted S3 audio object: {key}")
+            else:
+                audio_path = _resolve_audio_path(episode.audio_file)
+                if audio_path.exists():
+                    try:
+                        audio_path.unlink()
+                        logger.info(f"Deleted audio file: {audio_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete audio file {audio_path}: {e}")
         
         # Delete the episode from the database
         await episode.delete()

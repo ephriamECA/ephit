@@ -1,73 +1,147 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/use-auth'
-import { useAuthStore } from '@/lib/stores/auth-store'
 import { getConfig } from '@/lib/config'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
+import { Label } from '@/components/ui/label'
+
+type AuthMode = 'login' | 'register'
+
+const PASSWORD_RULES = [
+  'At least 8 characters long',
+  'Includes an uppercase letter',
+  'Includes a lowercase letter',
+  'Includes a number',
+  'Includes a special character',
+]
+
+const passwordChecklist = [
+  { label: '8+ characters', test: (value: string) => value.length >= 8 },
+  { label: 'Uppercase letter', test: (value: string) => /[A-Z]/.test(value) },
+  { label: 'Lowercase letter', test: (value: string) => /[a-z]/.test(value) },
+  { label: 'Number', test: (value: string) => /[0-9]/.test(value) },
+  { label: 'Special character', test: (value: string) => /[^A-Za-z0-9]/.test(value) },
+]
+
+const validatePassword = (password: string) => {
+  if (password.length < 8) {
+    return 'Password must be at least 8 characters long.'
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must include at least one uppercase letter.'
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must include at least one lowercase letter.'
+  }
+  if (!/[0-9]/.test(password)) {
+    return 'Password must include at least one number.'
+  }
+  if (!/[^A-Za-z0-9]/.test(password)) {
+    return 'Password must include at least one special character.'
+  }
+  return null
+}
 
 export function LoginForm() {
-  const [password, setPassword] = useState('')
-  const { login, isLoading, error } = useAuth()
-  const { authRequired, checkAuthRequired, hasHydrated, isAuthenticated } = useAuthStore()
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true)
-  const [configInfo, setConfigInfo] = useState<{ apiUrl: string; version: string; buildTime: string } | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { login, register, isAuthenticated, isLoading, error } = useAuth()
+  const [mode, setMode] = useState<AuthMode>('login')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
+  const [localError, setLocalError] = useState<string | null>(null)
+  const [configInfo, setConfigInfo] = useState<{ apiUrl: string; version: string; buildTime: string } | null>(null)
+  const [isRegistering, setIsRegistering] = useState(false)
 
-  // Load config info for debugging
   useEffect(() => {
-    getConfig().then(cfg => {
-      setConfigInfo({
-        apiUrl: cfg.apiUrl,
-        version: cfg.version,
-        buildTime: cfg.buildTime,
+    getConfig()
+      .then((cfg) => {
+        setConfigInfo({
+          apiUrl: cfg.apiUrl,
+          version: cfg.version,
+          buildTime: cfg.buildTime,
+        })
       })
-    }).catch(err => {
-      console.error('Failed to load config:', err)
-    })
+      .catch((err) => {
+        console.error('Failed to load config:', err)
+      })
   }, [])
 
-  // Check if authentication is required on mount
   useEffect(() => {
-    if (!hasHydrated) {
+    const nextPath = searchParams.get('next')
+    if (nextPath) {
+      sessionStorage.setItem('redirectAfterLogin', nextPath)
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.replace('/notebooks')
+    }
+  }, [isAuthenticated, router])
+
+  const passwordChecks = useMemo(
+    () => passwordChecklist.map((check) => ({
+      label: check.label,
+      passed: check.test(password),
+    })),
+    [password],
+  )
+
+  const handleToggleMode = () => {
+    setMode((prev) => (prev === 'login' ? 'register' : 'login'))
+    setLocalError(null)
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    setLocalError(null)
+
+    if (!email.trim() || !password.trim()) {
+      setLocalError('Email and password are required.')
       return
     }
 
-    const checkAuth = async () => {
-      try {
-        const required = await checkAuthRequired()
-
-        // If auth is not required, redirect to notebooks
-        if (!required) {
-          router.push('/notebooks')
-        }
-      } catch (error) {
-        console.error('Error checking auth requirement:', error)
-        // On error, assume auth is required to be safe
-      } finally {
-        setIsCheckingAuth(false)
+    if (mode === 'register') {
+      const passwordError = validatePassword(password)
+      if (passwordError) {
+        setLocalError(passwordError)
+        return
       }
-    }
+      if (password !== confirmPassword) {
+        setLocalError('Passwords do not match.')
+        return
+      }
 
-    // If we already know auth status, use it
-    if (authRequired !== null) {
-      if (!authRequired && isAuthenticated) {
-        router.push('/notebooks')
-      } else {
-        setIsCheckingAuth(false)
+      setIsRegistering(true)
+      try {
+        const success = await register(email.trim(), password, displayName || undefined)
+        if (!success) {
+          setIsRegistering(false)
+          return
+        }
+        // Registration successful - redirect will happen via useEffect
+      } catch (err) {
+        setIsRegistering(false)
+        console.error('Registration error:', err)
       }
     } else {
-      void checkAuth()
+      const success = await login(email.trim(), password)
+      if (!success) {
+        return
+      }
     }
-  }, [hasHydrated, authRequired, checkAuthRequired, router, isAuthenticated])
+  }
 
-  // Show loading while checking if auth is required
-  if (!hasHydrated || isCheckingAuth) {
+  if (isLoading && !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <LoadingSpinner />
@@ -75,109 +149,161 @@ export function LoginForm() {
     )
   }
 
-  // If we still don't know if auth is required (connection error), show error
-  if (authRequired === null) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <CardTitle>Connection Error</CardTitle>
-            <CardDescription>
-              Unable to connect to the API server
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-start gap-2 text-red-600 text-sm">
-                <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                <div className="flex-1">
-                  {error || 'Unable to connect to server. Please check if the API is running.'}
-                </div>
-              </div>
-
-              {configInfo && (
-                <div className="space-y-2 text-xs text-muted-foreground border-t pt-3">
-                  <div className="font-medium">Diagnostic Information:</div>
-                  <div className="space-y-1 font-mono">
-                    <div>Version: {configInfo.version}</div>
-                    <div>Built: {new Date(configInfo.buildTime).toLocaleString()}</div>
-                    <div className="break-all">API URL: {configInfo.apiUrl}</div>
-                    <div className="break-all">Frontend: {typeof window !== 'undefined' ? window.location.href : 'N/A'}</div>
-                  </div>
-                  <div className="text-xs pt-2">
-                    Check browser console for detailed logs (look for 🔧 [Config] messages)
-                  </div>
-                </div>
-              )}
-
-              <Button
-                onClick={() => window.location.reload()}
-                className="w-full"
-              >
-                Retry Connection
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (password.trim()) {
-      try {
-        await login(password)
-      } catch (error) {
-        console.error('Unhandled error during login:', error)
-        // The auth store should handle most errors, but this catches any unhandled ones
-      }
-    }
-  }
+  const activeError = localError || error
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle>EphItUp</CardTitle>
+      <Card className="w-full max-w-lg">
+        <CardHeader className="text-center space-y-2">
+          <CardTitle className="text-2xl">EphItUp</CardTitle>
           <CardDescription>
-            Enter your password to access the application
+            {mode === 'login'
+              ? 'Sign in to access your notebooks and research'
+              : 'Create an account to start organizing your research'}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
               <Input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={isLoading}
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                autoComplete="email"
+                required
               />
             </div>
 
-            {error && (
-              <div className="flex items-center gap-2 text-red-600 text-sm">
-                <AlertCircle className="h-4 w-4" />
-                {error}
+            {mode === 'register' && (
+              <div className="space-y-2">
+                <Label htmlFor="displayName">Display name (optional)</Label>
+                <Input
+                  id="displayName"
+                  placeholder="How should we address you?"
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
+                />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                placeholder="••••••••"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+                required
+              />
+            </div>
+
+            {mode === 'register' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Repeat your password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    autoComplete="new-password"
+                    required
+                  />
+                </div>
+
+                <div className="rounded-lg border border-dashed bg-muted/40 p-4">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground mb-2">
+                    <Info className="h-4 w-4" />
+                    Password requirements
+                  </div>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {PASSWORD_RULES.map((rule) => (
+                      <li key={rule}>{rule}</li>
+                    ))}
+                  </ul>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    {passwordChecks.map((item) => (
+                      <div
+                        key={item.label}
+                        className={`flex items-center gap-2 rounded-md border px-2 py-1 ${
+                          item.passed ? 'border-green-500/60 bg-green-500/10 text-green-600' : 'border-border text-muted-foreground'
+                        }`}
+                      >
+                        {item.passed ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+                        {item.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeError && (
+              <div className="flex items-start gap-2 text-sm text-red-600">
+                <AlertCircle className="h-5 w-5 flex-shrink-0" />
+                <span>{activeError}</span>
               </div>
             )}
 
             <Button
               type="submit"
-              className="w-full"
-              disabled={isLoading || !password.trim()}
+              className="w-full flex items-center justify-center gap-2"
+              disabled={isLoading || isRegistering}
             >
-              {isLoading ? 'Signing in...' : 'Sign In'}
+              {mode === 'login' ? (
+                <>
+                  {isLoading ? 'Signing in...' : 'Sign in'}
+                  <ArrowRight className="h-4 w-4" />
+                </>
+              ) : (
+                <>
+                  {isRegistering ? 'Creating account...' : 'Create account'}
+                  {!isRegistering && <ArrowRight className="h-4 w-4" />}
+                  {isRegistering && <LoadingSpinner />}
+                </>
+              )}
             </Button>
-
-            {configInfo && (
-              <div className="text-xs text-center text-muted-foreground pt-2 border-t">
-                <div>Version {configInfo.version}</div>
-                <div className="font-mono text-[10px]">{configInfo.apiUrl}</div>
-              </div>
-            )}
           </form>
+
+          <div className="mt-4 text-sm text-center text-muted-foreground">
+            {mode === 'login' ? (
+              <>
+                Need an account?{' '}
+                <button
+                  type="button"
+                  onClick={handleToggleMode}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Register now
+                </button>
+              </>
+            ) : (
+              <>
+                Already have an account?{' '}
+                <button
+                  type="button"
+                  onClick={handleToggleMode}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Sign in instead
+                </button>
+              </>
+            )}
+          </div>
+
+          {configInfo && (
+            <div className="mt-6 border-t pt-4 text-xs text-muted-foreground space-y-1 text-center">
+              <div>Version {configInfo.version}</div>
+              <div>Built {new Date(configInfo.buildTime).toLocaleString()}</div>
+              <div className="font-mono text-[10px] break-all">{configInfo.apiUrl}</div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -1,18 +1,21 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookList } from './components/NotebookList'
 import { Button } from '@/components/ui/button'
 import { Plus, RefreshCw, Search, BookOpen, Calendar, Sparkles } from 'lucide-react'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
-import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
+import { CreateNotebookDialog, NOTEBOOK_CREATED_EVENT } from '@/components/notebooks/CreateNotebookDialog'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent } from '@/components/ui/card'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
+import { OnboardingDialog } from '@/components/onboarding/OnboardingDialog'
+import { useAuthStore } from '@/lib/stores/auth-store'
+import { completeOnboarding } from '@/lib/api/onboarding'
 
 // Modern Notebook Card Component
 function NotebookCard({ notebook, archived = false }: { notebook: any, archived?: boolean }) {
@@ -77,8 +80,72 @@ export default function NotebooksPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const { data: notebooks, isLoading, refetch } = useNotebooks(false)
   const { data: archivedNotebooks } = useNotebooks(true)
+  const mainContentRef = useRef<HTMLDivElement>(null)
+  const { user, setSession, accessToken } = useAuthStore()
+  const [showOnboarding, setShowOnboarding] = useState(false)
+
+  // Check if user needs onboarding
+  useEffect(() => {
+    if (user && !user.has_completed_onboarding) {
+      setShowOnboarding(true)
+    } else if (user && user.has_completed_onboarding) {
+      setShowOnboarding(false)
+    }
+  }, [user])
+
+  const handleOnboardingComplete = async () => {
+    setShowOnboarding(false)
+    try {
+      await completeOnboarding()
+      // Update user in store to reflect onboarding completion
+      if (user && accessToken) {
+        const updatedUser = { ...user, has_completed_onboarding: true }
+        setSession({
+          access_token: accessToken,
+          token_type: 'bearer',
+          user: updatedUser
+        })
+      }
+    } catch (error) {
+      console.error('Failed to complete onboarding:', error)
+      // Still close the dialog even if API call fails
+      setShowOnboarding(false)
+    }
+  }
 
   const normalizedQuery = searchTerm.trim().toLowerCase()
+
+  // Listen for notebook creation and scroll to top
+  useEffect(() => {
+    const handleNotebookCreated = () => {
+      // Wait for query to invalidate and rerender
+      setTimeout(() => {
+        // Scroll to show the notebooks section with smooth animation
+        if (mainContentRef.current) {
+          mainContentRef.current.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start',
+            inline: 'nearest'
+          })
+        } else {
+          // Fallback: try to find the main content div and scroll
+          const mainContent = document.querySelector('[class*="max-w-7xl mx-auto px-4"]')
+          if (mainContent) {
+            mainContent.scrollIntoView({ 
+              behavior: 'smooth', 
+              block: 'start',
+              inline: 'nearest'
+            })
+          }
+        }
+      }, 500)
+    }
+
+    window.addEventListener(NOTEBOOK_CREATED_EVENT, handleNotebookCreated)
+    return () => {
+      window.removeEventListener(NOTEBOOK_CREATED_EVENT, handleNotebookCreated)
+    }
+  }, [])
 
   const filteredActive = useMemo(() => {
     if (!notebooks) {
@@ -148,7 +215,7 @@ export default function NotebooksPage() {
         </div>
 
         {/* Main Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div ref={mainContentRef} className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
           {/* Search and Filters - Liquid Glass */}
           <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <div className="flex-1 relative">
@@ -248,6 +315,11 @@ export default function NotebooksPage() {
       <CreateNotebookDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+      />
+
+      <OnboardingDialog
+        open={showOnboarding}
+        onComplete={handleOnboardingComplete}
       />
     </AppShell>
   )

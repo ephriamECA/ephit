@@ -1,4 +1,5 @@
 import time
+import asyncio
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +10,12 @@ from surreal_commands import CommandInput, CommandOutput, command
 from open_notebook.config import DATA_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.podcast import EpisodeProfile, PodcastEpisode, SpeakerProfile
+from open_notebook.storage import (
+    S3StorageError,
+    build_episode_asset_key,
+    is_s3_configured,
+    upload_file,
+)
 
 try:
     from podcast_creator import configure, create_podcast
@@ -34,6 +41,7 @@ class PodcastGenerationInput(CommandInput):
     episode_name: str
     content: str
     briefing_suffix: Optional[str] = None
+    user_id: Optional[str] = None
 
 
 class PodcastGenerationOutput(CommandOutput):
@@ -109,6 +117,7 @@ async def generate_podcast_command(
             audio_file=None,
             transcript=None,
             outline=None,
+            owner=ensure_record_id(input_data.user_id) if input_data.user_id else None,
         )
         await episode.save()
 
@@ -128,22 +137,66 @@ async def generate_podcast_command(
         # 6. Generate podcast using podcast-creator
         logger.info("Starting podcast generation with podcast-creator...")
 
-        result = await create_podcast(
-            content=input_data.content,
-            briefing=briefing,
-            episode_name=input_data.episode_name,
-            output_dir=str(output_dir),
-            speaker_config=speaker_profile.name,
-            episode_profile=episode_profile.name,
-        )
+        # Load user's API keys from provider secrets
+        from open_notebook.utils.provider_env import user_provider_context
+        
+        async with user_provider_context(input_data.user_id):
+            result = await create_podcast(
+                content=input_data.content,
+                briefing=briefing,
+                episode_name=input_data.episode_name,
+                output_dir=str(output_dir),
+                speaker_config=speaker_profile.name,
+                episode_profile=episode_profile.name,
+            )
 
-        episode.audio_file = (
-            str(result.get("final_output_file_path")) if result else None
-        )
-        episode.transcript = {
-            "transcript": full_model_dump(result["transcript"]) if result else None
-        }
-        episode.outline = full_model_dump(result["outline"]) if result else None
+        # The final audio file is at a predictable location: output_dir/audio/episode_name.mp3
+        final_audio_path = output_dir / "audio" / f"{input_data.episode_name}.mp3"
+
+        storage_url: Optional[str] = None
+
+        if final_audio_path.exists():
+            if is_s3_configured():
+                key = build_episode_asset_key(
+                    input_data.user_id,
+                    str(episode.id),
+                    final_audio_path.name,
+                )
+                try:
+                    storage_url = await upload_file(
+                        final_audio_path,
+                        key,
+                        content_type="audio/mpeg",
+                    )
+                    episode.audio_file = storage_url
+                    logger.info(f"Uploaded podcast audio to S3: {storage_url}")
+                    # Remove local copy after upload to save disk space
+                    try:
+                        await asyncio.to_thread(final_audio_path.unlink)
+                    except OSError as unlink_error:
+                        logger.warning(f"Failed to remove local audio file {final_audio_path}: {unlink_error}")
+                except S3StorageError as exc:
+                    logger.error(f"S3 upload failed, falling back to local storage: {exc}")
+                    episode.audio_file = str(final_audio_path.resolve())
+            else:
+                episode.audio_file = str(final_audio_path.resolve())
+                logger.info(f"Saved audio file path: {episode.audio_file}")
+        else:
+            logger.warning(f"Audio file not found at expected location: {final_audio_path}")
+            # Try to get it from result if available, or construct path anyway
+            if result and result.get("final_output_file_path"):
+                episode.audio_file = str(result.get("final_output_file_path"))
+            else:
+                # Save the expected path even if file doesn't exist yet
+                episode.audio_file = str(final_audio_path.resolve())
+        
+        # Save transcript and outline from result if available
+        if result:
+            episode.transcript = {
+                "transcript": full_model_dump(result.get("transcript")) if result.get("transcript") else None
+            }
+            episode.outline = full_model_dump(result.get("outline")) if result.get("outline") else None
+        
         await episode.save()
 
         processing_time = time.time() - start_time
@@ -154,15 +207,9 @@ async def generate_podcast_command(
         return PodcastGenerationOutput(
             success=True,
             episode_id=str(episode.id),
-            audio_file_path=str(result.get("final_output_file_path"))
-            if result
-            else None,
-            transcript={"transcript": full_model_dump(result["transcript"])}
-            if result.get("transcript")
-            else None,
-            outline=full_model_dump(result["outline"])
-            if result.get("outline")
-            else None,
+            audio_file_path=episode.audio_file,
+            transcript=episode.transcript,
+            outline=episode.outline,
             processing_time=processing_time,
         )
 

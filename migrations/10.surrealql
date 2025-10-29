@@ -1,0 +1,23 @@
+DEFINE TABLE IF NOT EXISTS user SCHEMAFULL;
+
+DEFINE FIELD email ON TABLE user TYPE string ASSERT string::is::email($value);
+DEFINE FIELD hashed_password ON TABLE user TYPE string;
+DEFINE FIELD display_name ON TABLE user TYPE option<string>;
+DEFINE FIELD is_active ON TABLE user TYPE bool DEFAULT true;
+
+DEFINE FIELD created ON TABLE user TYPE datetime DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD updated ON TABLE user TYPE datetime DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX user_email_unique ON TABLE user COLUMNS email UNIQUE;
+
+DEFINE FIELD owner ON TABLE notebook TYPE option<record<user>>;
+DEFINE FIELD owner ON TABLE note TYPE option<record<user>>;
+DEFINE FIELD owner ON TABLE source TYPE option<record<user>>;
+DEFINE FIELD owner ON TABLE chat_session TYPE option<record<user>>;
+DEFINE FIELD owner ON TABLE episode_profile TYPE option<record<user>>;
+
+DEFINE INDEX notebook_owner_index ON TABLE notebook COLUMNS owner;
+DEFINE INDEX note_owner_index ON TABLE note COLUMNS owner;
+DEFINE INDEX source_owner_index ON TABLE source COLUMNS owner;
+DEFINE INDEX chat_session_owner_index ON TABLE chat_session COLUMNS owner;
+DEFINE INDEX episode_profile_owner_index ON TABLE episode_profile COLUMNS owner;

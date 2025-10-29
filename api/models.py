@@ -1,6 +1,49 @@
+import re
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    display_name: Optional[str] = Field(None, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_password(cls, data):
+        password = data.password
+        if not re.search(r"[A-Z]", password):
+            raise ValueError("Password must contain at least one uppercase letter")
+        if not re.search(r"[a-z]", password):
+            raise ValueError("Password must contain at least one lowercase letter")
+        if not re.search(r"[0-9]", password):
+            raise ValueError("Password must contain at least one number")
+        if not re.search(r"[^A-Za-z0-9]", password):
+            raise ValueError("Password must contain at least one special character")
+        return data
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: EmailStr
+    display_name: Optional[str] = None
+    is_active: bool = True
+    is_admin: bool = False
+    has_completed_onboarding: bool = False
+
+
+class AuthResponse(TokenResponse):
+    user: UserResponse
 
 
 # Notebook models
@@ -158,6 +201,60 @@ class DefaultPromptResponse(BaseModel):
     transformation_instructions: str = Field(
         ..., description="Default transformation instructions"
     )
+
+
+# Admin models
+class AdminUserSummary(BaseModel):
+    id: str
+    email: EmailStr
+    display_name: Optional[str] = None
+    is_active: bool
+    is_admin: bool
+    created: Optional[str] = None
+    updated: Optional[str] = None
+    notebook_count: int
+    source_count: int
+    note_count: int
+    episode_count: int
+
+
+class AdminNotebookInfo(BaseModel):
+    id: str
+    name: str
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class AdminSourceInfo(BaseModel):
+    id: str
+    title: Optional[str] = None
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class AdminNoteInfo(BaseModel):
+    id: str
+    title: Optional[str] = None
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class AdminEpisodeInfo(BaseModel):
+    id: str
+    name: str
+    created: Optional[str] = None
+    updated: Optional[str] = None
+
+
+class AdminUserDetail(AdminUserSummary):
+    notebooks: List[AdminNotebookInfo]
+    sources: List[AdminSourceInfo]
+    notes: List[AdminNoteInfo]
+    episodes: List[AdminEpisodeInfo]
+
+
+class MessageResponse(BaseModel):
+    message: str
 
 
 class DefaultPromptUpdate(BaseModel):

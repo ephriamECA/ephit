@@ -147,44 +147,46 @@ export function EpisodeCard({ episode, onDelete, deleting }: EpisodeCardProps) {
     // If backend exposed a protected endpoint, fetch it with auth headers
     const loadProtectedAudio = async () => {
       // First resolve the audio URL
-      const directAudioUrl = await resolvePodcastAssetUrl(episode.audio_url ?? episode.audio_file)
+      const directAudioUrl = await resolvePodcastAssetUrl(
+        episode.audio_url ?? episode.audio_file
+      )
 
-      if (!directAudioUrl || !episode.audio_url) {
+      if (!directAudioUrl) {
+        setAudioError('Audio unavailable')
+        return
+      }
+
+      // Use presigned/public URLs directly without proxying through the API client
+      if (!episode.audio_url || !episode.audio_url.startsWith('/api/')) {
         setAudioSrc(directAudioUrl)
         return
       }
 
-      try {
-        let token: string | undefined
-        if (typeof window !== 'undefined') {
-          const raw = window.localStorage.getItem('auth-storage')
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw)
-              token = parsed?.state?.token
-            } catch (error) {
-              console.error('Failed to parse auth storage', error)
-            }
-          }
-        }
+      // If there's an audio_url from the API, use it directly
+      if (episode.audio_url) {
+        try {
+          // Use dynamic import to avoid circular dependencies
+          const { default: apiClient } = await import('@/lib/api/client')
 
-        const headers: HeadersInit = {}
-        if (token) {
-          headers.Authorization = `Bearer ${token}`
-        }
+          // apiClient already prefixes requests with /api, so strip it if present
+          const apiPath = episode.audio_url.startsWith('/api/')
+            ? episode.audio_url.slice(4)
+            : episode.audio_url
 
-        const response = await fetch(directAudioUrl, { headers })
-        if (!response.ok) {
-          throw new Error(`Audio request failed with status ${response.status}`)
+          const response = await apiClient.get(apiPath, {
+            responseType: 'blob',
+          })
+          
+          revokeUrl = URL.createObjectURL(response.data)
+          setAudioSrc(revokeUrl)
+        } catch (error) {
+          console.error('Unable to load podcast audio', error)
+          setAudioError('Audio unavailable')
+          setAudioSrc(undefined)
         }
-
-        const blob = await response.blob()
-        revokeUrl = URL.createObjectURL(blob)
-        setAudioSrc(revokeUrl)
-      } catch (error) {
-        console.error('Unable to load podcast audio', error)
-        setAudioError('Audio unavailable')
-        setAudioSrc(undefined)
+      } else {
+        // Fallback to direct URL
+        setAudioSrc(directAudioUrl)
       }
     }
 

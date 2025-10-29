@@ -16,7 +16,8 @@ import {
   LogOut,
   Sparkles,
   Shuffle,
-  Wrench
+  Wrench,
+  Shield
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -28,6 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
 import { GeneratePodcastDialog } from '@/components/podcasts/GeneratePodcastDialog'
@@ -37,6 +39,7 @@ type CreateTarget = 'source' | 'notebook' | 'podcast'
 export function BottomNav() {
   const pathname = usePathname()
   const { logout } = useAuth()
+  const isAdmin = useAuthStore((state) => state.user?.is_admin ?? false)
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [sourceDialogOpen, setSourceDialogOpen] = useState(false)
   const [notebookDialogOpen, setNotebookDialogOpen] = useState(false)
@@ -73,47 +76,50 @@ export function BottomNav() {
             <nav className="flex items-center gap-1 sm:gap-2 flex-1 justify-center min-w-0">
               {/* Primary Actions - Liquid Glass */}
               <div className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-2xl sm:rounded-3xl liquid-glass backdrop-blur-2xl shrink-0">
-                <Link href="/notebooks">
-                  <Button
-                    variant={pathname.startsWith('/notebooks') ? 'default' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
-                      pathname.startsWith('/notebooks') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
-                    )}
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/notebooks') ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
+                    pathname.startsWith('/notebooks') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
+                  )}
+                >
+                  <Link href="/notebooks">
                     <Book className="h-4 w-4" />
                     <span className="hidden lg:inline">Library</span>
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
 
-                <Link href="/sources">
-                  <Button
-                    variant={pathname.startsWith('/sources') ? 'default' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
-                      pathname.startsWith('/sources') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
-                    )}
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/sources') ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
+                    pathname.startsWith('/sources') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
+                  )}
+                >
+                  <Link href="/sources">
                     <FileText className="h-4 w-4" />
                     <span className="hidden lg:inline">Documents</span>
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
 
-                <Link href="/search">
-                  <Button
-                    variant={pathname.startsWith('/search') ? 'default' : 'ghost'}
-                    size="sm"
-                    className={cn(
-                      "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
-                      pathname.startsWith('/search') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
-                    )}
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/search') ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    "rounded-xl sm:rounded-2xl h-9 sm:h-10 px-2 sm:px-4 gap-1 sm:gap-2 transition-all duration-300",
+                    pathname.startsWith('/search') && "shadow-xl shadow-primary/30 liquid-glass backdrop-blur-xl"
+                  )}
+                >
+                  <Link href="/search">
                     <Search className="h-4 w-4" />
                     <span className="hidden lg:inline">Discover</span>
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
 
               {/* Create Button */}
@@ -146,49 +152,66 @@ export function BottomNav() {
 
               {/* Secondary Actions - Visible on all screens */}
               <div className="flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-2xl sm:rounded-3xl liquid-glass backdrop-blur-2xl">
-                <Link href="/podcasts">
+                {isAdmin && (
                   <Button
-                    variant={pathname.startsWith('/podcasts') ? 'default' : 'ghost'}
+                    asChild
+                    variant={pathname.startsWith('/admin') ? 'default' : 'ghost'}
                     size="icon"
                     className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
-                    title="Audio"
+                    title="Admin"
                   >
+                    <Link href="/admin">
+                      <Shield className="h-4 w-4" />
+                    </Link>
+                  </Button>
+                )}
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/podcasts') ? 'default' : 'ghost'}
+                  size="icon"
+                  className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
+                  title="Audio"
+                >
+                  <Link href="/podcasts">
                     <Mic className="h-4 w-4" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
 
-                <Link href="/models">
-                  <Button
-                    variant={pathname.startsWith('/models') ? 'default' : 'ghost'}
-                    size="icon"
-                    className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
-                    title="AI Models"
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/models') ? 'default' : 'ghost'}
+                  size="icon"
+                  className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
+                  title="AI Models"
+                >
+                  <Link href="/models">
                     <Bot className="h-4 w-4" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
 
-                <Link href="/transformations">
-                  <Button
-                    variant={pathname.startsWith('/transformations') ? 'default' : 'ghost'}
-                    size="icon"
-                    className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
-                    title="Transformations"
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/transformations') ? 'default' : 'ghost'}
+                  size="icon"
+                  className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
+                  title="Transformations"
+                >
+                  <Link href="/transformations">
                     <Shuffle className="h-4 w-4" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
 
-                <Link href="/settings">
-                  <Button
-                    variant={pathname.startsWith('/settings') ? 'default' : 'ghost'}
-                    size="icon"
-                    className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
-                    title="Preferences"
-                  >
+                <Button
+                  asChild
+                  variant={pathname.startsWith('/settings') ? 'default' : 'ghost'}
+                  size="icon"
+                  className="rounded-xl sm:rounded-2xl h-9 w-9 sm:h-10 sm:w-10 transition-all duration-300"
+                  title="Preferences"
+                >
+                  <Link href="/settings">
                     <Settings className="h-4 w-4" />
-                  </Button>
-                </Link>
+                  </Link>
+                </Button>
               </div>
             </nav>
 
@@ -225,4 +248,3 @@ export function BottomNav() {
     </>
   )
 }
-

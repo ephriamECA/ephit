@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { CreateModelRequest, ProviderAvailability } from '@/lib/types/models'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,9 +19,11 @@ interface AddModelFormProps {
 export function AddModelForm({ modelType, providers }: AddModelFormProps) {
   const [open, setOpen] = useState(false)
   const createModel = useCreateModel()
-  const { register, handleSubmit, formState: { errors }, reset, setValue, watch } = useForm<CreateModelRequest>({
+  const { register, handleSubmit, formState: { errors }, reset, control, watch } = useForm<CreateModelRequest>({
     defaultValues: {
-      type: modelType
+      type: modelType,
+      provider: '',
+      name: ''
     }
   })
 
@@ -29,6 +31,13 @@ export function AddModelForm({ modelType, providers }: AddModelFormProps) {
   const availableProviders = providers.available.filter(provider =>
     providers.supported_types[provider]?.includes(modelType)
   )
+
+  // Debug: Log the providers data
+  console.log('Available providers for', modelType, ':', {
+    available: providers.available,
+    supported_types: providers.supported_types,
+    filtered: availableProviders
+  })
 
   const onSubmit = async (data: CreateModelRequest) => {
     await createModel.mutateAsync(data)
@@ -58,7 +67,10 @@ export function AddModelForm({ modelType, providers }: AddModelFormProps) {
   if (availableProviders.length === 0) {
     return (
       <div className="text-sm text-muted-foreground">
-        No providers available for {getModelTypeName()} models
+        {providers.available.length > 0 
+          ? `No providers support ${getModelTypeName()} models. Add an API key in Settings → Provider Keys.`
+          : 'Add an API key in Settings → Provider Keys to configure models.'
+        }
       </div>
     )
   }
@@ -78,34 +90,47 @@ export function AddModelForm({ modelType, providers }: AddModelFormProps) {
           Add Model
         </Button>
       </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="gap-0">
+        <DialogHeader className="mb-4">
           <DialogTitle>Add {getModelTypeName()} Model</DialogTitle>
           <DialogDescription>
             Configure a new {getModelTypeName()} model from available providers.
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-0">
+          <div className="space-y-2">
             <Label htmlFor="provider">Provider</Label>
-            <Select onValueChange={(value) => setValue('provider', value)} required>
-              <SelectTrigger>
-                <SelectValue placeholder="Select a provider" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableProviders.map((provider) => (
-                  <SelectItem key={provider} value={provider}>
-                    <span className="capitalize">{provider}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Controller
+              name="provider"
+              control={control}
+              rules={{ required: 'Provider is required' }}
+              render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a provider" />
+                  </SelectTrigger>
+                  <SelectContent className="z-[100] max-h-[200px]">
+                    {availableProviders.length === 0 ? (
+                      <div className="py-2 text-center text-sm text-muted-foreground">
+                        No providers available
+                      </div>
+                    ) : (
+                      availableProviders.map((provider) => (
+                        <SelectItem key={provider} value={provider}>
+                          <span className="capitalize">{provider}</span>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              )}
+            />
             {errors.provider && (
-              <p className="text-sm text-destructive mt-1">Provider is required</p>
+              <p className="text-sm text-destructive">{errors.provider.message as string}</p>
             )}
           </div>
 
-          <div>
+          <div className="space-y-2">
             <Label htmlFor="name">Model Name</Label>
             <Input
               id="name"
@@ -113,15 +138,16 @@ export function AddModelForm({ modelType, providers }: AddModelFormProps) {
               placeholder={getModelPlaceholder()}
             />
             {errors.name && (
-              <p className="text-sm text-destructive mt-1">{errors.name.message}</p>
+              <p className="text-sm text-destructive">{errors.name.message}</p>
             )}
-            <p className="text-xs text-muted-foreground mt-1">
-              {modelType === 'language' && watch('provider') === 'azure' &&
-                'For Azure, use the deployment name as the model name'}
-            </p>
+            {modelType === 'language' && watch('provider') === 'azure' && (
+              <p className="text-xs text-muted-foreground">
+                For Azure, use the deployment name as the model name
+              </p>
+            )}
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>

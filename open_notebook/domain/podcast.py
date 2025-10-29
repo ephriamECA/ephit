@@ -113,6 +113,9 @@ class PodcastEpisode(ObjectModel):
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands job"
     )
+    owner: Optional[Union[str, RecordID]] = Field(
+        default=None, description="User who created this episode"
+    )
 
     class Config:
         arbitrary_types_allowed = True

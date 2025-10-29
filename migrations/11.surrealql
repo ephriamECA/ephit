@@ -1,0 +1,3 @@
+-- Add owner field to episode table for user isolation
+DEFINE FIELD owner ON TABLE episode TYPE option<record<user>>;
+DEFINE INDEX episode_owner_index ON TABLE episode COLUMNS owner;

@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { ThemeToggle } from '@/components/common/ThemeToggle'
 import { Separator } from '@/components/ui/separator'
-import { Search, Bell, Settings, User, LogOut } from 'lucide-react'
+import { Search, Bell, Settings, User, LogOut, Shield } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 
 const navItems = [
@@ -31,6 +32,11 @@ export function TopNav() {
   const pathname = usePathname()
   const { logout } = useAuth()
   const [searchOpen, setSearchOpen] = useState(false)
+  const isAdmin = useAuthStore((state) => state.user?.is_admin ?? false)
+
+  const items = isAdmin
+    ? [...navItems, { name: 'Admin', href: '/admin', icon: '🛡️' }]
+    : navItems
 
   return (
     <>
@@ -61,7 +67,7 @@ export function TopNav() {
 
               {/* Navigation Links */}
               <nav className="hidden md:flex items-center gap-1">
-                {navItems.map((item) => {
+                {items.map((item) => {
                   const isActive = pathname.startsWith(item.href)
                   return (
                     <Link
@@ -120,6 +126,15 @@ export function TopNav() {
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>My Account</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {isAdmin && (
+                    <Link href="/admin">
+                      <DropdownMenuItem>
+                        <Shield className="mr-2 h-4 w-4" />
+                        Admin Dashboard
+                      </DropdownMenuItem>
+                    </Link>
+                  )}
+                  {isAdmin && <DropdownMenuSeparator />}
                   <Link href="/settings">
                     <DropdownMenuItem>
                       <Settings className="mr-2 h-4 w-4" />
@@ -138,7 +153,7 @@ export function TopNav() {
           {/* Mobile Navigation */}
           <div className="md:hidden border-t border-border/60 py-2">
             <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
-              {navItems.map((item) => {
+              {items.map((item) => {
                 const isActive = pathname.startsWith(item.href)
                 return (
                   <Link
@@ -176,4 +191,6 @@ export function TopNav() {
     </>
   )
 }
+
+
 

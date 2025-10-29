@@ -1,0 +1,3 @@
+-- Remove admin flag from users
+REMOVE INDEX user_is_admin_index ON TABLE user;
+REMOVE FIELD is_admin ON TABLE user;

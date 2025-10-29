@@ -27,11 +27,14 @@ from api.models import (
     SourceUpdate,
 )
 from commands.source_commands import SourceProcessingInput
+from api.security import get_current_active_user
 from open_notebook.config import UPLOADS_FOLDER
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.domain.transformation import Transformation
+from open_notebook.domain.user import User
 from open_notebook.exceptions import InvalidInputError
+from open_notebook.utils.provider_env import user_provider_context
 
 router = APIRouter()
 
@@ -156,6 +159,7 @@ async def get_sources(
     offset: int = Query(0, ge=0, description="Number of sources to skip"),
     sort_by: str = Query("updated", description="Field to sort by (created or updated)"),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Get sources with pagination and sorting support."""
     try:
@@ -170,10 +174,13 @@ async def get_sources(
 
         # Build the query
         if notebook_id:
-            # Verify notebook exists first
+            # Verify notebook exists and belongs to user
             notebook = await Notebook.get(notebook_id)
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
+            # Check ownership
+            if notebook.owner and str(notebook.owner) != str(current_user.id):
+                raise HTTPException(status_code=403, detail="Notebook not found")
 
             # Query sources for specific notebook - include command field
             query = f"""
@@ -192,16 +199,31 @@ async def get_sources(
                 }
             )
         else:
-            # Query all sources - include command field
+            # Query all sources for current user only - include command field
+            owner_param = ensure_record_id(current_user.id)
+            logger.info(f"QUERY DEBUG: Fetching sources for user {current_user.id}, owner_param={owner_param}")
+            
             query = f"""
                 SELECT id, asset, created, title, updated, topics, command,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
                 ((SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1)) != NONE AS embedded
                 FROM source
+                WHERE owner = $owner
                 {order_clause}
                 LIMIT $limit START $offset
             """
-            result = await repo_query(query, {"limit": limit, "offset": offset})
+            result = await repo_query(
+                query, 
+                {
+                    "owner": owner_param,
+                    "limit": limit, 
+                    "offset": offset
+                }
+            )
+            
+            logger.info(f"QUERY DEBUG: Returned {len(result)} sources for user {current_user.id}")
+            for src in result[:3]:  # Log first 3
+                logger.info(f"QUERY DEBUG: Source {src.get('id')} has owner={src.get('owner')}")
 
         # Extract command IDs for batch status fetching
         command_ids = []
@@ -321,6 +343,7 @@ async def create_source(
     form_data: tuple[SourceCreate, Optional[UploadFile]] = Depends(
         parse_source_form_data
     ),
+    current_user: User = Depends(get_current_active_user),
 ):
     """Create a new source with support for both JSON and multipart form data."""
     source_data, upload_file = form_data
@@ -394,6 +417,7 @@ async def create_source(
             source = Source(
                 title=source_data.title or "Processing...",
                 topics=[],
+                owner=current_user.id,
             )
             await source.save()
 
@@ -410,9 +434,10 @@ async def create_source(
                 command_input = SourceProcessingInput(
                     source_id=str(source.id),
                     content_state=content_state,
-                    notebook_ids=source_data.notebooks,
+                    notebook_ids=source_data.notebooks or [],
                     transformations=transformation_ids,
                     embed=source_data.embed,
+                    user_id=current_user.id,
                 )
 
                 command_id = await CommandService.submit_command_job(
@@ -473,6 +498,7 @@ async def create_source(
                 source = Source(
                     title=source_data.title or "Processing...",
                     topics=[],
+                    owner=current_user.id,
                 )
                 await source.save()
 
@@ -485,17 +511,19 @@ async def create_source(
                 command_input = SourceProcessingInput(
                     source_id=str(source.id),
                     content_state=content_state,
-                    notebook_ids=source_data.notebooks,
+                    notebook_ids=source_data.notebooks or [],
                     transformations=transformation_ids,
                     embed=source_data.embed,
+                    user_id=current_user.id,
                 )
 
-                result = execute_command_sync(
-                    "open_notebook",  # app name
-                    "process_source",  # command name
-                    command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
-                )
+                async with user_provider_context(current_user.id):
+                    result = execute_command_sync(
+                        "open_notebook",  # app name
+                        "process_source",  # command name
+                        command_input.model_dump(),
+                        timeout=300,  # 5 minute timeout for sync processing
+                    )
 
                 if not result.is_success():
                     logger.error(f"Sync processing failed: {result.error_message}")
@@ -587,11 +615,14 @@ async def create_source(
 
 
 @router.post("/sources/json", response_model=SourceResponse)
-async def create_source_json(source_data: SourceCreate):
+async def create_source_json(
+    source_data: SourceCreate,
+    current_user: User = Depends(get_current_active_user),
+):
     """Create a new source using JSON payload (legacy endpoint for backward compatibility)."""
     # Convert to form data format and call main endpoint
     form_data = (source_data, None)
-    return await create_source(form_data)
+    return await create_source(form_data, current_user)
 
 
 async def _resolve_source_file(source_id: str) -> tuple[str, str]:
@@ -634,12 +665,18 @@ def _is_source_file_available(source: Source) -> Optional[bool]:
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)
-async def get_source(source_id: str):
-    """Get a specific source by ID."""
+async def get_source(
+    source_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get a specific source by ID (user-scoped)."""
     try:
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+        # Verify source belongs to user
+        if source.owner and str(source.owner) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Source not found")
 
         # Get status information if command exists
         status = None
@@ -826,13 +863,23 @@ async def update_source(source_id: str, source_update: SourceUpdate):
 
 
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
-async def retry_source_processing(source_id: str):
+async def retry_source_processing(
+    source_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
     """Retry processing for a failed or stuck source."""
     try:
         # First, verify source exists
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        if source.owner and source.owner != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to retry this source")
+
+        if not source.owner:
+            source.owner = current_user.id
+            await source.save()
 
         # Check if source already has a running command
         if source.command:
@@ -893,6 +940,7 @@ async def retry_source_processing(source_id: str):
                 notebook_ids=notebook_ids,
                 transformations=[],  # Use default transformations on retry
                 embed=True,  # Always embed on retry
+                user_id=current_user.id,
             )
 
             command_id = await CommandService.submit_command_job(
@@ -906,7 +954,7 @@ async def retry_source_processing(source_id: str):
             )
 
             # Update source with new command ID
-            source.command = ensure_record_id(f"command:{command_id}")
+            source.command = ensure_record_id(command_id)
             await source.save()
 
             # Get current embedded chunks count

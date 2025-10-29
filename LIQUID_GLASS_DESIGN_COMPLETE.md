@@ -260,3 +260,9 @@ The entire Open Notebook site now uses **Liquid Glass** - Apple's revolutionary 
 
 **Result**: A complete visual transformation that makes every interaction feel magical and delightful, just like Apple's newest software design!
 
+
+
+
+
+
+

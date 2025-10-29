@@ -1,0 +1,3 @@
+-- Remove onboarding completion tracking from users
+REMOVE FIELD has_completed_onboarding ON TABLE user;
+

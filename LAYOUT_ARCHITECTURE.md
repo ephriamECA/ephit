@@ -331,3 +331,9 @@ export function BreadcrumbShell({ children, breadcrumbs }: Props) {
 - State managed by Zustand stores
 
 To create a new layout, start by wrapping AppShell with your custom components while keeping the existing functionality intact.
+
+
+
+
+
+

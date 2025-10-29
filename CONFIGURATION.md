@@ -1,5 +1,12 @@
 # Configuration Guide
 
+## Required Secrets
+
+Open Notebook encrypts user-supplied provider credentials using Fernet. Configure these secrets in every process (API server, command workers):
+
+- `JWT_SECRET` — Signing key for access tokens. Generate a random string (`openssl rand -hex 32`). Without it, the backend falls back to an insecure default and sessions are reset on restart.
+- `FERNET_SECRET_KEY` — 32-byte url-safe base64 key used for encryption. If it isn't provided, the server automatically creates one at `.secrets/fernet.key` (or at the path from `FERNET_SECRET_FILE`) on first start and keeps using it on subsequent restarts. Provide your own value via environment variable when you're deploying to production or need to rotate the key.
+
 ## API Connection Configuration
 
 Starting from version 1.0.0-alpha, Open Notebook uses a simplified API connection system that automatically configures itself based on your deployment environment.

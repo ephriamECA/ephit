@@ -1,10 +1,12 @@
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
 from api.models import NoteCreate, NoteResponse, NoteUpdate
+from api.security import get_current_active_user
 from open_notebook.domain.notebook import Note
+from open_notebook.domain.user import User
 from open_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
@@ -12,9 +14,10 @@ router = APIRouter()
 
 @router.get("/notes", response_model=List[NoteResponse])
 async def get_notes(
-    notebook_id: Optional[str] = Query(None, description="Filter by notebook ID")
+    notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    current_user: User = Depends(get_current_active_user),
 ):
-    """Get all notes with optional notebook filtering."""
+    """Get all notes with optional notebook filtering (user-scoped)."""
     try:
         if notebook_id:
             # Get notes for a specific notebook
@@ -22,10 +25,18 @@ async def get_notes(
             notebook = await Notebook.get(notebook_id)
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
+            # Verify notebook belongs to user
+            if notebook.owner and str(notebook.owner) != str(current_user.id):
+                raise HTTPException(status_code=403, detail="Notebook not found")
             notes = await notebook.get_notes()
         else:
-            # Get all notes
-            notes = await Note.get_all(order_by="updated desc")
+            # Get all notes owned by current user
+            from open_notebook.database.repository import repo_query, ensure_record_id
+            result = await repo_query(
+                "SELECT * FROM note WHERE owner = $owner ORDER BY updated DESC",
+                {"owner": ensure_record_id(current_user.id)}
+            )
+            notes = [Note(**note_data) for note_data in result]
         
         return [
             NoteResponse(
@@ -46,8 +57,11 @@ async def get_notes(
 
 
 @router.post("/notes", response_model=NoteResponse)
-async def create_note(note_data: NoteCreate):
-    """Create a new note."""
+async def create_note(
+    note_data: NoteCreate,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Create a new note (user-scoped)."""
     try:
         # Auto-generate title if not provided and it's an AI note
         title = note_data.title
@@ -73,6 +87,7 @@ async def create_note(note_data: NoteCreate):
             title=title,
             content=note_data.content,
             note_type=note_type,
+            owner=current_user.id,
         )
         await new_note.save()
         
@@ -102,12 +117,18 @@ async def create_note(note_data: NoteCreate):
 
 
 @router.get("/notes/{note_id}", response_model=NoteResponse)
-async def get_note(note_id: str):
-    """Get a specific note by ID."""
+async def get_note(
+    note_id: str,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Get a specific note by ID (user-scoped)."""
     try:
         note = await Note.get(note_id)
         if not note:
             raise HTTPException(status_code=404, detail="Note not found")
+        # Verify note belongs to user
+        if note.owner and str(note.owner) != str(current_user.id):
+            raise HTTPException(status_code=403, detail="Note not found")
         
         return NoteResponse(
             id=note.id or "",

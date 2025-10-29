@@ -13,6 +13,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
 import { useSettings, useUpdateSettings } from '@/lib/hooks/use-settings'
 import { useEffect, useState } from 'react'
 import { ChevronDownIcon } from 'lucide-react'
+import { ProviderKeysCard } from './ProviderKeysCard'
 
 const settingsSchema = z.object({
   default_content_processing_engine_doc: z.enum(['auto', 'docling', 'simple']).optional(),
@@ -87,7 +88,8 @@ export function SettingsForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+    <div className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Content Processing</CardTitle>
@@ -273,6 +275,9 @@ export function SettingsForm() {
           {updateSettings.isPending ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
-    </form>
+      </form>
+
+      <ProviderKeysCard />
+    </div>
   )
 }

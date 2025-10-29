@@ -129,6 +129,9 @@ docker run -d \
   -v ./notebook_data:/app/data \
   -v ./surreal_data:/mydata \
   -e OPENAI_API_KEY=your_key_here \
+  -e JWT_SECRET=your_jwt_secret \
+  # Optional but recommended: set to persist encrypted provider secrets across containers
+  -e FERNET_SECRET_KEY=your_fernet_key \
   -e SURREAL_URL="ws://localhost:8000/rpc" \
   -e SURREAL_USER="root" \
   -e SURREAL_PASSWORD="root" \
@@ -154,6 +157,9 @@ docker run -d \
   -v ./notebook_data:/app/data \
   -v ./surreal_data:/mydata \
   -e OPENAI_API_KEY=your_key_here \
+  -e JWT_SECRET=your_jwt_secret \
+  # Optional but recommended: set to persist encrypted provider secrets across containers
+  -e FERNET_SECRET_KEY=your_fernet_key \
   -e API_URL=http://YOUR_SERVER_IP:5055 \
   -e SURREAL_URL="ws://localhost:8000/rpc" \
   -e SURREAL_USER="root" \
@@ -177,6 +183,14 @@ docker run -d \
 > - **Port 8502**: Web interface (what you see in your browser)
 > - **Port 5055**: API backend (required for the app to function)
 >
+> **Secrets:**
+> ```bash
+> export JWT_SECRET=$(openssl rand -hex 32)
+> # Optional for local dev; production deployments should set it explicitly.
+> export FERNET_SECRET_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+> ```
+> If you omit `FERNET_SECRET_KEY`, the backend writes one to `.secrets/fernet.key` (or to the path in `FERNET_SECRET_FILE`) on first start and reuses it while that file persists.
+>
 > **API_URL must match how YOU access the server:**
 > - ✅ Access via `http://192.168.1.100:8502` → set `API_URL=http://192.168.1.100:5055`
 > - ✅ Access via `http://myserver.local:8502` → set `API_URL=http://myserver.local:5055`
@@ -196,6 +210,9 @@ services:
       - "5055:5055"  # API (required!)
     environment:
       - OPENAI_API_KEY=your_key_here
+      - JWT_SECRET=your_jwt_secret
+      # Optional but recommended: set to keep encrypted provider secrets after redeploys
+      - FERNET_SECRET_KEY=your_fernet_key
       # For remote access, uncomment and set your server IP/domain:
       # - API_URL=http://192.168.1.100:5055
       # Database connection (required for single-container)
@@ -398,6 +415,38 @@ We welcome contributions! We're especially looking for help with:
 **Future Roadmap**: Real-time updates, enhanced async processing
 
 See our [Contributing Guide](CONTRIBUTING.md) for detailed information on how to get started.
+
+## ☁️ Podcast Audio Storage (AWS S3)
+
+Podcast episodes can get large quickly. By default they are written to the API server’s local disk (`data/podcasts/episodes`). To keep deployments lightweight—and to enable per-user storage quotas—you can offload the audio to Amazon S3 (or any S3-compatible service such as Cloudflare R2, Backblaze B2, or MinIO).
+
+1. Create a bucket and note the bucket name, region, and (optionally) custom endpoint URL.
+2. Supply credentials to the API via environment variables:
+
+    ```env
+    S3_BUCKET_NAME=your-bucket
+    S3_REGION=us-east-1
+    # Optional for AWS – required for custom S3 endpoints (MinIO, R2, etc.)
+    S3_ENDPOINT_URL=https://s3.amazonaws.com
+    AWS_ACCESS_KEY_ID=your-access-key
+    AWS_SECRET_ACCESS_KEY=your-secret-key
+    # Optional if you use temporary credentials:
+    # AWS_SESSION_TOKEN=...
+    ```
+
+3. Restart the API worker/command worker. Newly generated podcast audio files are uploaded to `episodes/<user_id>/<episode_id>/`.
+4. When episodes are listed, the API returns a presigned URL so the frontend can stream the audio directly from S3. Deleting an episode also removes the S3 object.
+
+If the variables are not set, the system falls back to local disk storage exactly as before.
+
+## 🛡️ Admin Console
+
+Administrators can now access a dedicated dashboard for account oversight:
+
+- Each user record has an `is_admin` flag (defaults to `false`). After running the latest migrations, grant yourself admin rights with `UPDATE user SET is_admin = true WHERE email = "your@email";`.
+- Admin-only endpoints live under `/api/admin/*` and are exposed through a new dashboard (`/admin` in the UI) for listing users, reviewing their resource counts, and purging user-specific data (including S3 podcast assets).
+- The admin navigation link only appears for accounts with `is_admin = true`; non-admins receive a 403 from the API.
+- All admin actions are gated server-side, so even if the UI is hidden the backend still enforces permissions.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

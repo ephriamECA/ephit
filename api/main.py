@@ -1,10 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from api.auth import PasswordAuthMiddleware
 from api.routers import (
     auth,
     chat,
@@ -17,6 +16,7 @@ from api.routers import (
     models,
     notebooks,
     notes,
+    admin,
     podcasts,
     search,
     settings,
@@ -24,8 +24,11 @@ from api.routers import (
     sources,
     speaker_profiles,
     transformations,
+    provider_secrets,
 )
 from api.routers import commands as commands_router
+from open_notebook.utils.crypto import MissingEncryptionKeyError, ensure_secret_key_configured
+from api.security import get_current_active_user
 from open_notebook.database.async_migrate import AsyncMigrationManager
 
 # Import commands to register them in the API process
@@ -63,6 +66,12 @@ async def lifespan(app: FastAPI):
         # Fail fast - don't start the API with an outdated database schema
         raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
+    try:
+        ensure_secret_key_configured()
+    except MissingEncryptionKeyError as exc:
+        logger.error(str(exc))
+        raise RuntimeError("FERNET_SECRET_KEY is required for secret storage") from exc
+
     logger.success("API initialization completed successfully")
 
     # Yield control to the application
@@ -79,9 +88,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Add password authentication middleware first
-# Exclude /api/auth/status and /api/config from authentication
-app.add_middleware(PasswordAuthMiddleware, excluded_paths=["/", "/health", "/docs", "/openapi.json", "/redoc", "/api/auth/status", "/api/config"])
+protected_dependencies = [Depends(get_current_active_user)]
 
 # Add CORS middleware last (so it processes first)
 app.add_middleware(
@@ -94,24 +101,120 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api", tags=["auth"])
+app.include_router(
+    admin.router,
+    prefix="/api",
+    tags=["admin"],
+)
+app.include_router(
+    provider_secrets.router,
+    prefix="/api",
+    tags=["provider-secrets"],
+    dependencies=protected_dependencies,
+)
 app.include_router(config.router, prefix="/api", tags=["config"])
-app.include_router(notebooks.router, prefix="/api", tags=["notebooks"])
-app.include_router(search.router, prefix="/api", tags=["search"])
-app.include_router(models.router, prefix="/api", tags=["models"])
-app.include_router(transformations.router, prefix="/api", tags=["transformations"])
-app.include_router(notes.router, prefix="/api", tags=["notes"])
-app.include_router(embedding.router, prefix="/api", tags=["embedding"])
-app.include_router(embedding_rebuild.router, prefix="/api/embeddings", tags=["embeddings"])
-app.include_router(settings.router, prefix="/api", tags=["settings"])
-app.include_router(context.router, prefix="/api", tags=["context"])
-app.include_router(sources.router, prefix="/api", tags=["sources"])
-app.include_router(insights.router, prefix="/api", tags=["insights"])
-app.include_router(commands_router.router, prefix="/api", tags=["commands"])
-app.include_router(podcasts.router, prefix="/api", tags=["podcasts"])
-app.include_router(episode_profiles.router, prefix="/api", tags=["episode-profiles"])
-app.include_router(speaker_profiles.router, prefix="/api", tags=["speaker-profiles"])
-app.include_router(chat.router, prefix="/api", tags=["chat"])
-app.include_router(source_chat.router, prefix="/api", tags=["source-chat"])
+app.include_router(
+    notebooks.router,
+    prefix="/api",
+    tags=["notebooks"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    search.router,
+    prefix="/api",
+    tags=["search"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    models.router,
+    prefix="/api",
+    tags=["models"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    transformations.router,
+    prefix="/api",
+    tags=["transformations"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    notes.router,
+    prefix="/api",
+    tags=["notes"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    embedding.router,
+    prefix="/api",
+    tags=["embedding"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    embedding_rebuild.router,
+    prefix="/api/embeddings",
+    tags=["embeddings"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    settings.router,
+    prefix="/api",
+    tags=["settings"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    context.router,
+    prefix="/api",
+    tags=["context"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    sources.router,
+    prefix="/api",
+    tags=["sources"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    insights.router,
+    prefix="/api",
+    tags=["insights"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    commands_router.router,
+    prefix="/api",
+    tags=["commands"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    podcasts.router,
+    prefix="/api",
+    tags=["podcasts"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    episode_profiles.router,
+    prefix="/api",
+    tags=["episode-profiles"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    speaker_profiles.router,
+    prefix="/api",
+    tags=["speaker-profiles"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    chat.router,
+    prefix="/api",
+    tags=["chat"],
+    dependencies=protected_dependencies,
+)
+app.include_router(
+    source_chat.router,
+    prefix="/api",
+    tags=["source-chat"],
+    dependencies=protected_dependencies,
+)
 
 
 @app.get("/")

@@ -1,0 +1,3 @@
+-- Remove owner field from episode table
+REMOVE FIELD owner ON TABLE episode;
+REMOVE INDEX episode_owner_index ON TABLE episode;

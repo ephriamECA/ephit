@@ -9,6 +9,32 @@ export interface NotebookResponse {
   note_count: number
 }
 
+export interface AuthUser {
+  id: string
+  email: string
+  display_name?: string | null
+  is_active?: boolean
+  is_admin: boolean
+  has_completed_onboarding?: boolean
+}
+
+export interface AuthResponse {
+  access_token: string
+  token_type: string
+  user: AuthUser
+}
+
+export interface ProviderSecretSummary {
+  provider: string
+  display_name?: string | null
+  created?: string | null
+  updated?: string | null
+}
+
+export interface ProviderSecretDetail extends ProviderSecretSummary {
+  value: string
+}
+
 export interface NoteResponse {
   id: string
   title: string | null
@@ -111,6 +137,55 @@ export interface UpdateSourceRequest {
 
 export interface APIError {
   detail: string
+}
+
+export interface AdminUserSummary {
+  id: string
+  email: string
+  display_name?: string | null
+  is_active: boolean
+  is_admin: boolean
+  created?: string | null
+  updated?: string | null
+  notebook_count: number
+  source_count: number
+  note_count: number
+  episode_count: number
+}
+
+export interface AdminNotebookInfo {
+  id: string
+  name: string
+  created?: string | null
+  updated?: string | null
+}
+
+export interface AdminSourceInfo {
+  id: string
+  title?: string | null
+  created?: string | null
+  updated?: string | null
+}
+
+export interface AdminNoteInfo {
+  id: string
+  title?: string | null
+  created?: string | null
+  updated?: string | null
+}
+
+export interface AdminEpisodeInfo {
+  id: string
+  name: string
+  created?: string | null
+  updated?: string | null
+}
+
+export interface AdminUserDetail extends AdminUserSummary {
+  notebooks: AdminNotebookInfo[]
+  sources: AdminSourceInfo[]
+  notes: AdminNoteInfo[]
+  episodes: AdminEpisodeInfo[]
 }
 
 // Source Chat Types

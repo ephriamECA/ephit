@@ -2,7 +2,7 @@ import os
 from typing import List, Optional
 
 from esperanto import AIFactory
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from loguru import logger
 
 from api.models import (
@@ -11,7 +11,10 @@ from api.models import (
     ModelResponse,
     ProviderAvailabilityResponse,
 )
+from api.security import get_current_active_user
 from open_notebook.domain.models import DefaultModels, Model
+from open_notebook.domain.user import User
+from open_notebook.domain.user_secret import UserProviderSecret
 from open_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
@@ -190,36 +193,52 @@ async def update_default_models(defaults_data: DefaultModelsResponse):
 
 
 @router.get("/models/providers", response_model=ProviderAvailabilityResponse)
-async def get_provider_availability():
-    """Get provider availability based on environment variables."""
+async def get_provider_availability(current_user: User = Depends(get_current_active_user)):
+    """Get provider availability based on environment variables and user-scoped secrets."""
     try:
-        # Check which providers have API keys configured
+        # Get user secrets with error handling
+        try:
+            user_secrets = await UserProviderSecret.list_for_user(current_user.id)
+            user_secret_providers = {secret.provider for secret in user_secrets}
+        except Exception as e:
+            logger.warning(f"Error fetching user secrets, continuing with env vars only: {str(e)}")
+            user_secret_providers = set()
+
+        def has_secret(*providers: str) -> bool:
+            return any(provider in user_secret_providers for provider in providers)
+
+        def has_env(*variables: str) -> bool:
+            return any(os.environ.get(var) for var in variables)
+
         provider_status = {
             "ollama": os.environ.get("OLLAMA_API_BASE") is not None,
-            "openai": os.environ.get("OPENAI_API_KEY") is not None,
-            "groq": os.environ.get("GROQ_API_KEY") is not None,
-            "xai": os.environ.get("XAI_API_KEY") is not None,
+            "openai": has_env("OPENAI_API_KEY") or has_secret("openai"),
+            "groq": has_env("GROQ_API_KEY") or has_secret("groq"),
+            "xai": has_env("XAI_API_KEY") or has_secret("xai"),
             "vertex": (
-                os.environ.get("VERTEX_PROJECT") is not None
-                and os.environ.get("VERTEX_LOCATION") is not None
-                and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") is not None
+                (
+                    os.environ.get("VERTEX_PROJECT") is not None
+                    and os.environ.get("VERTEX_LOCATION") is not None
+                    and os.environ.get("GOOGLE_APPLICATION_CREDENTIALS") is not None
+                )
+                or has_secret("vertexai")
             ),
             "google": (
-                os.environ.get("GOOGLE_API_KEY") is not None
-                or os.environ.get("GEMINI_API_KEY") is not None
+                has_env("GOOGLE_API_KEY", "GEMINI_API_KEY")
+                or has_secret("gemini", "google")
             ),
-            "openrouter": os.environ.get("OPENROUTER_API_KEY") is not None,
-            "anthropic": os.environ.get("ANTHROPIC_API_KEY") is not None,
-            "elevenlabs": os.environ.get("ELEVENLABS_API_KEY") is not None,
-            "voyage": os.environ.get("VOYAGE_API_KEY") is not None,
+            "openrouter": has_env("OPENROUTER_API_KEY") or has_secret("openrouter"),
+            "anthropic": has_env("ANTHROPIC_API_KEY") or has_secret("anthropic"),
+            "elevenlabs": has_env("ELEVENLABS_API_KEY") or has_secret("elevenlabs"),
+            "voyage": has_env("VOYAGE_API_KEY") or has_secret("voyage"),
             "azure": (
                 os.environ.get("AZURE_OPENAI_API_KEY") is not None
                 and os.environ.get("AZURE_OPENAI_ENDPOINT") is not None
                 and os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME") is not None
                 and os.environ.get("AZURE_OPENAI_API_VERSION") is not None
             ),
-            "mistral": os.environ.get("MISTRAL_API_KEY") is not None,
-            "deepseek": os.environ.get("DEEPSEEK_API_KEY") is not None,
+            "mistral": has_env("MISTRAL_API_KEY") or has_secret("mistral"),
+            "deepseek": has_env("DEEPSEEK_API_KEY") or has_secret("deepseek"),
             "openai-compatible": (
                 _check_openai_compatible_support("LLM")
                 or _check_openai_compatible_support("EMBEDDING")

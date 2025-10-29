@@ -1,17 +1,20 @@
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from api.security import get_current_active_user
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
+from open_notebook.domain.user import User
 from open_notebook.exceptions import (
     NotFoundError,
 )
 from open_notebook.graphs.chat import graph as chat_graph
+from open_notebook.utils.provider_env import user_provider_context
 
 router = APIRouter()
 
@@ -311,7 +314,7 @@ async def delete_session(session_id: str):
 
 
 @router.post("/chat/execute", response_model=ExecuteChatResponse)
-async def execute_chat(request: ExecuteChatRequest):
+async def execute_chat(request: ExecuteChatRequest, current_user: User = Depends(get_current_active_user)):
     """Execute a chat request and get AI response."""
     try:
         # Verify session exists
@@ -351,16 +354,17 @@ async def execute_chat(request: ExecuteChatRequest):
         user_message = HumanMessage(content=request.message)
         state_values["messages"].append(user_message)
 
-        # Execute chat graph
-        result = chat_graph.invoke(
-            input=state_values,  # type: ignore[arg-type]
-            config=RunnableConfig(
-                configurable={
-                    "thread_id": request.session_id,
-                    "model_id": model_override,
-                }
-            ),
-        )
+        # Execute chat graph with user's API keys
+        async with user_provider_context(current_user.id):
+            result = chat_graph.invoke(
+                input=state_values,  # type: ignore[arg-type]
+                config=RunnableConfig(
+                    configurable={
+                        "thread_id": request.session_id,
+                        "model_id": model_override,
+                    }
+                ),
+            )
 
         # Update session timestamp
         await session.save()

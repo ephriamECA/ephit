@@ -123,6 +123,19 @@ desktop.ini
 .quarentena
 
 claude-logs/
+
+# Frontend build files
+frontend/.next/
+frontend/out/
+frontend/.env*.local
+frontend/node_modules/
+frontend/.turbo/
+frontend/.cache/
+
+# SurrealDB data
+surreal_single_data/
+surreal_data/
+*.db
 .claude/sessions
 **/claude-logs
 

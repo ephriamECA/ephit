@@ -1,4 +1,7 @@
 .env
+.env.backup
+.env.local
+*.env.backup
 prompts/patterns/user/
 /notebooks/
 data/

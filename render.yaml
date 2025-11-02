@@ -9,7 +9,7 @@ services:
     # - standard (2GB): Recommended for production. Stable with all features enabled.
     # - pro (4GB): Best for heavy usage (many users, large notebooks, podcast generation)
     plan: starter
-    healthCheckPath: /
+    healthCheckPath: /api/health  # Comprehensive health check with DB and migration status
     # Persistent disk storage - REQUIRED for data persistence across deploys
     # SurrealDB stores database at /mydata/mydatabase.db
     # Also stores encryption keys at /mydata/.secrets/
@@ -59,6 +59,12 @@ services:
       # Frontend reads it from environment and binds to that port
       - key: INTERNAL_API_URL
         value: "http://localhost:5055"
+      
+      # Data Storage Configuration
+      # Points all file storage to persistent disk mount
+      # Without this, uploaded files are lost on every deployment!
+      - key: DATA_PATH
+        value: "/mydata"
       
       # Worker Configuration (Optional)
       # Set to "false" to disable worker and save ~100MB RAM on tight deployments

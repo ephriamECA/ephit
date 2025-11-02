@@ -39,7 +39,9 @@ def get_secret_key() -> str:
 
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRES_MINUTES", "60"))
+# Default 24 hours (1440 minutes) for better UX
+# Users stay logged in for a full day instead of being kicked out every hour
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_EXPIRES_MINUTES", "1440"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/token")
 

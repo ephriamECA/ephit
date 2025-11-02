@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -12,6 +13,7 @@ from api.routers import (
     embedding,
     embedding_rebuild,
     episode_profiles,
+    health,
     insights,
     models,
     notebooks,
@@ -90,16 +92,29 @@ app = FastAPI(
 
 protected_dependencies = [Depends(get_current_active_user)]
 
-# Add CORS middleware last (so it processes first)
+# CORS Configuration - Restrict origins in production
+# For local dev: set ALLOWED_ORIGINS="http://localhost:3000,http://localhost:8502"
+# For production: set ALLOWED_ORIGINS="https://your-domain.com"
+allowed_origins_str = os.environ.get("ALLOWED_ORIGINS", "*")
+allowed_origins = allowed_origins_str.split(",") if allowed_origins_str != "*" else ["*"]
+
+if "*" in allowed_origins:
+    logger.warning(
+        "CORS is set to allow all origins (*). "
+        "Set ALLOWED_ORIGINS environment variable to restrict access in production."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
 
 # Include routers
+app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(
     admin.router,

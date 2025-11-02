@@ -3,11 +3,37 @@ Async migration system for SurrealDB using the official Python client.
 Based on patterns from sblpy migration system.
 """
 
+import os
+from pathlib import Path
 from typing import List
 
 from loguru import logger
 
 from .repository import db_connection, repo_query
+
+
+def _resolve_migration_path(file_path: str) -> Path:
+    """Resolve migration file path relative to project root."""
+    # Try relative to current working directory first (for local dev)
+    relative_path = Path(file_path)
+    if relative_path.exists():
+        return relative_path
+    
+    # Try relative to this file's parent (project root)
+    # This file is at: open_notebook/database/async_migrate.py
+    # Project root should be: open_notebook/../ (two levels up)
+    project_root = Path(__file__).resolve().parent.parent.parent
+    project_path = project_root / file_path
+    if project_path.exists():
+        return project_path
+    
+    # Try absolute from /app (Docker container)
+    docker_path = Path("/app") / file_path
+    if docker_path.exists():
+        return docker_path
+    
+    # Fallback to original path
+    return Path(file_path)
 
 
 class AsyncMigration:
@@ -22,7 +48,9 @@ class AsyncMigration:
     @classmethod
     def from_file(cls, file_path: str) -> "AsyncMigration":
         """Create migration from SQL file."""
-        with open(file_path, "r") as file:
+        resolved_path = _resolve_migration_path(file_path)
+        logger.debug(f"Loading migration from: {resolved_path} (resolved from {file_path})")
+        with open(resolved_path, "r") as file:
             raw_content = file.read()
             # Clean up SQL content
             lines = []

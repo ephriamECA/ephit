@@ -336,3 +336,5 @@ For detailed documentation on specific components, see:
 - [Frontend Architecture](./FRONTEND_ARCHITECTURE.md)
 - [Deployment Guide](./DEPLOYMENT_GUIDE.md)
 
+
+

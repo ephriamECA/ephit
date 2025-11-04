@@ -563,3 +563,5 @@ def test_protected_route(client: TestClient, auth_token: str):
 - [Frontend Auth Flow](./FRONTEND_ARCHITECTURE.md#authentication)
 - [Security Configuration](./SECURITY_GUIDE.md)
 
+
+

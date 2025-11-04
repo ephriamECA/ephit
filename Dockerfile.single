@@ -30,7 +30,8 @@ COPY open_notebook/__init__.py ./open_notebook/__init__.py
 # Install dependencies with optimizations (this layer will be cached unless dependencies change)
 RUN uv sync --frozen --no-dev
 
-# Copy the rest of the application code
+# Copy the rest of the application code  
+# Build timestamp: 2025-11-04 (cache buster)
 COPY . /app
 
 # Install frontend dependencies and build

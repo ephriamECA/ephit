@@ -39,9 +39,10 @@ async def health_check():
     # Check 1: Database connectivity
     try:
         async with db_connection() as db:
-            # Simple query to verify connection - SurrealDB uses RETURN for simple values
+            # Simple query to verify connection - SurrealDB RETURN gives us the value directly
             result = await db.query("RETURN 1")
-            if result and len(result) > 0:
+            # RETURN 1 returns the integer 1 directly (not wrapped in a list)
+            if result is not None:
                 health["checks"]["database"] = {"status": "ok", "connected": True}
             else:
                 raise Exception("Query returned no results")

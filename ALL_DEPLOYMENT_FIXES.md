@@ -49,9 +49,17 @@
 **File:** `Dockerfile.single:70-86`  
 **Before:** Copied entire `/app` then tried to overwrite frontend standalone  
 **After:** Copy backend separately, then properly structure frontend standalone  
-**Why:** Standalone builds have `server.js` in `.next/standalone/frontend/`, not at root  
+**Why:** Standalone builds have `server.js` at `.next/standalone/` root  
 **Impact:** ALL static assets (CSS, JS, fonts) returned 404 - blank page!  
 **Symptom:** Browser console showed 10+ 404 errors for `/_next/static/*` files
+
+### ✅ Issue #9: Frontend Command Path Mismatch (FIXED) 🔥 CRITICAL
+**File:** `supervisord.single.conf:49`  
+**Before:** `node .next/standalone/server.js` (path doesn't exist after Docker fix)  
+**After:** `node server.js` (correct path after copying standalone to /app/frontend/)  
+**Why:** Issue #8 changed where server.js is copied, but supervisord wasn't updated  
+**Impact:** Frontend failed to start, users saw API message instead of login page!  
+**Symptom:** `{"message":"Open Notebook API is running"}` at root URL
 
 ---
 
